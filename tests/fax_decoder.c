@@ -14,6 +14,7 @@
 #include "config.h"
 #endif
 
+#include <stdarg.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,6 +38,22 @@
 #define DISBIT7     0x40
 #define DISBIT8     0x80
 
+const char *identifier;
+int chunk_count = 0;
+int epoch = 0;
+
+#define MILLISECONDS_PER_CHUNK 20
+
+static void start_log_line(char *section) {
+    fprintf(stderr, "%s: %09u;%s;", section, epoch, identifier);
+}
+
+static void write_log(const char* format, ...) {
+	va_list args;
+	va_start(args, format);
+	vfprintf(stderr, format, args);
+	va_end(args);
+}
 
 typedef struct
 {
@@ -643,9 +660,6 @@ int octets_per_ecm_frame = 256;
 int error_correcting_mode = FALSE;
 int current_fallback = 0;
 
-const char *event_data_prefix;
-int chunk_count = 0;
-
 static int decode_20digit_msg_to_buff(char *dest, const uint8_t *pkt, int len)
 {
     int p;
@@ -685,33 +699,35 @@ static void print_frame(const uint8_t *fr, int frlen)
 
     char buff[4096];
     
-    fprintf(stderr, "EVENT: %09u;%s;%s;", chunk_count*20, event_data_prefix, t30_frametype(fr[2]));
+    start_log_line("MESSAGE");
+    write_log("%s;", t30_frametype(fr[2]));
+
     for (i = 2;  i < frlen;  i++) {
-        fprintf(stderr, "%02x", fr[i]);
+        write_log("%02x", fr[i]);
         if(i < frlen-1) {
-            fprintf(stderr, " ");
+            write_log(" ");
         }
     }
     type = fr[2] & 0xFE;
     if (type == T30_DIS  ||  type == T30_DTC  ||  type == T30_DCS) {
         t30_decode_dis_dtc_dcs_to_buff(buff, fr, frlen);
-        fprintf(stderr, ";%s", buff);
+        write_log(";%s", buff);
     } else if (type == T30_CSI  ||  type == T30_TSI  ||  type == T30_PWD  ||  type == T30_SEP  ||  type == T30_SUB  ||  type == T30_SID) {
         decode_20digit_msg_to_buff(buff, fr, frlen);
-        fprintf(stderr, ";%s", buff);
+        write_log(";%s", buff);
     } else if (type == T30_NSF  ||  type == T30_NSS  ||  type == T30_NSC) {
-        fprintf(stderr, ";");
+        write_log(";");
         if (t35_decode(&fr[3], frlen - 3, &country, &vendor, &model))
         {
             if (country)
-                fprintf(stderr, "country=%s ", country);
+                write_log("country=%s ", country);
             if (vendor)
-                fprintf(stderr, "vendor=%s ", vendor);
+                write_log("vendor=%s ", vendor);
             if (model)
-                fprintf(stderr, "model=%s ", model);
+                write_log("model=%s ", model);
         }
     }
-    fprintf(stderr, "\n");
+    write_log("\n");
 }
 /*- End of function --------------------------------------------------------*/
 
@@ -777,7 +793,8 @@ static int check_rx_dcs(const uint8_t *msg, int len)
         line_encoding = T4_COMPRESSION_ITU_T4_2D;
     else
         line_encoding = T4_COMPRESSION_ITU_T4_1D;
-    fprintf(stderr, "Selected compression %d\n", line_encoding);
+	start_log_line("DEBUG");
+    write_log("Selected compression %d\n", line_encoding);
 
     if ((current_fallback = find_fallback_entry(dcs_frame[4] & (DISBIT6 | DISBIT5 | DISBIT4 | DISBIT3))) < 0)
         printf("Remote asked for a modem standard we do not support\n");
@@ -797,7 +814,8 @@ static void hdlc_accept(void *user_data, const uint8_t *msg, int len, int ok)
     if (len < 0)
     {
         /* Special conditions */
-        fprintf(stderr, "HDLC status is %s (%d)\n", signal_status_to_str(len), len);
+		start_log_line("DEBUG");
+        write_log("HDLC status is %s (%d)\n", signal_status_to_str(len), len);
         return;
     }
 
@@ -805,7 +823,8 @@ static void hdlc_accept(void *user_data, const uint8_t *msg, int len, int ok)
     {
         if (msg[0] != 0xFF  ||  !(msg[1] == 0x03  ||  msg[1] == 0x13))
         {
-            fprintf(stderr, "EVENT: %09u;%s Bad HDLC frame header - %02x %02x\n", chunk_count*20, event_data_prefix, msg[0], msg[1]);
+			start_log_line("ERROR");
+            write_log("Bad HDLC frame header - %02x %02x\n", msg[0], msg[1]);
             return;
         }
         print_frame(msg, len);
@@ -828,10 +847,15 @@ static void hdlc_accept(void *user_data, const uint8_t *msg, int len, int ok)
     }
     else
     {
-        fprintf(stderr, "Bad HDLC frame ");
-        for (i = 0;  i < len;  i++)
-            fprintf(stderr, " %02x", msg[i]);
-        fprintf(stderr, "\n");
+        start_log_line("ERROR");
+        write_log("Bad HDLC frame;");
+        for (i = 0;  i < len;  i++) {
+            write_log("%02x", msg[i]);
+            if(i < len-1) {
+                write_log(" ");
+            }
+        }
+        write_log("\n");
     }
 }
 /*- End of function --------------------------------------------------------*/
@@ -867,17 +891,18 @@ static void t4_end(void)
         {
             if (ecm_len[i] > 0)
                 t4_rx_put_chunk(&t4_rx_state, ecm_data[i], ecm_len[i]);
-            fprintf(stderr, "%d", (ecm_len[i] <= 0)  ?  0  :  1);
+            write_log("%d", (ecm_len[i] <= 0)  ?  0  :  1);
         }
-        fprintf(stderr, "\n");
+        write_log("\n");
     }
     t4_rx_end_page(&t4_rx_state);
     t4_rx_get_transfer_statistics(&t4_rx_state, &stats);
-    fprintf(stderr, "Pages = %d\n", stats.pages_transferred);
-    fprintf(stderr, "Image size = %dx%d\n", stats.width, stats.length);
-    fprintf(stderr, "Image resolution = %dx%d\n", stats.x_resolution, stats.y_resolution);
-    fprintf(stderr, "Bad rows = %d\n", stats.bad_rows);
-    fprintf(stderr, "Longest bad row run = %d\n", stats.longest_bad_row_run);
+    start_log_line("STATS");
+    write_log("Pages = %d,", stats.pages_transferred);
+    write_log("Image size = %dx%d,", stats.width, stats.length);
+    write_log("Image resolution = %dx%d,", stats.x_resolution, stats.y_resolution);
+    write_log("Bad rows = %d,", stats.bad_rows);
+    write_log("Longest bad row run = %d\n", stats.longest_bad_row_run);
     t4_up = FALSE;
 }
 /*- End of function --------------------------------------------------------*/
@@ -887,7 +912,8 @@ static void v21_put_bit(void *user_data, int bit)
     if (bit < 0)
     {
         /* Special conditions */
-        fprintf(stderr, "V.21 rx status is %s (%d)\n", signal_status_to_str(bit), bit);
+		start_log_line("DEBUG");	
+        write_log("V.21 rx status is %s (%d)\n", signal_status_to_str(bit), bit);
         switch (bit)
         {
         case SIG_STATUS_CARRIER_DOWN:
@@ -907,7 +933,8 @@ static void v17_put_bit(void *user_data, int bit)
     if (bit < 0)
     {
         /* Special conditions */
-        fprintf(stderr, "V.17 rx status is %s (%d)\n", signal_status_to_str(bit), bit);
+		start_log_line("DEBUG");
+        write_log("V.17 rx status is %s (%d)\n", signal_status_to_str(bit), bit);
         switch (bit)
         {
         case SIG_STATUS_TRAINING_SUCCEEDED:
@@ -931,7 +958,8 @@ static void v17_put_bit(void *user_data, int bit)
         if (t4_rx_put_bit(&t4_rx_state, bit))
         {
             t4_end();
-            fprintf(stderr, "End of page detected\n");
+			start_log_line("DEBUG");
+            write_log("End of page detected\n");
         }
     }
     //printf("V.17 Rx bit %d - %d\n", rx_bits++, bit);
@@ -943,7 +971,8 @@ static void v29_put_bit(void *user_data, int bit)
     if (bit < 0)
     {
         /* Special conditions */
-        fprintf(stderr, "V.29 rx status is %s (%d)\n", signal_status_to_str(bit), bit);
+		start_log_line("DEBUG");
+        write_log("V.29 rx status is %s (%d)\n", signal_status_to_str(bit), bit);
         switch (bit)
         {
         case SIG_STATUS_TRAINING_SUCCEEDED:
@@ -967,7 +996,8 @@ static void v29_put_bit(void *user_data, int bit)
         if (t4_rx_put_bit(&t4_rx_state, bit))
         {
             t4_end();
-            fprintf(stderr, "End of page detected\n");
+			start_log_line("DEBUG");
+            write_log("End of page detected\n");
         }
     }
     //printf("V.29 Rx bit %d - %d\n", rx_bits++, bit);
@@ -979,7 +1009,8 @@ static void v27ter_put_bit(void *user_data, int bit)
     if (bit < 0)
     {
         /* Special conditions */
-        fprintf(stderr, "V.27ter rx status is %s (%d)\n", signal_status_to_str(bit), bit);
+		start_log_line("DEBUG");
+        write_log("V.27ter rx status is %s (%d)\n", signal_status_to_str(bit), bit);
         switch (bit)
         {
         case SIG_STATUS_TRAINING_SUCCEEDED:
@@ -1003,7 +1034,8 @@ static void v27ter_put_bit(void *user_data, int bit)
         if (t4_rx_put_bit(&t4_rx_state, bit))
         {
             t4_end();
-            fprintf(stderr, "End of page detected\n");
+			start_log_line("DEBUG");
+            write_log("End of page detected\n");
         }
     }
     //printf("V.27ter Rx bit %d - %d\n", rx_bits++, bit);
@@ -1012,7 +1044,7 @@ static void v27ter_put_bit(void *user_data, int bit)
 
 void usage(void) {
 	printf("\n \
-Usage: file_name event_info_prefix\n \
+Usage: file_name identifier\n \
 Ex:    side1.wav side1\n");
 }
 
@@ -1035,22 +1067,25 @@ int main(int argc, char *argv[])
     }
 
     filename = argv[1];
-    event_data_prefix = argv[2];
+    identifier = argv[2];
 
     memset(&info, 0, sizeof(info));
     if ((inhandle = sf_open(filename, SFM_READ, &info)) == NULL)
     {
-        fprintf(stderr, "    Cannot open audio file '%s' for reading\n", filename);
+		start_log_line("DEBUG");
+        write_log("    Cannot open audio file '%s' for reading\n", filename);
         exit(2);
     }
     if (info.samplerate != SAMPLE_RATE)
     {
-        fprintf(stderr, "    Unexpected sample rate in audio file '%s'\n", filename);
+		start_log_line("DEBUG");
+        write_log("    Unexpected sample rate in audio file '%s'\n", filename);
         exit(2);
     }
     if (info.channels != 1)
     {
-        fprintf(stderr, "    Unexpected number of channels in audio file '%s'\n", filename);
+		start_log_line("DEBUG");
+        write_log("    Unexpected number of channels in audio file '%s'\n", filename);
         exit(2);
     }
 
@@ -1088,7 +1123,8 @@ int main(int argc, char *argv[])
 
     if (t4_rx_init(&t4_rx_state, "fax_decode.tif", T4_COMPRESSION_ITU_T4_2D) == NULL)
     {
-        fprintf(stderr, "Failed to init\n");
+		start_log_line("DEBUG");
+        write_log("Failed to init\n");
         exit(0);
     }
         
@@ -1102,12 +1138,14 @@ int main(int argc, char *argv[])
         v29_rx(v29, amp, len);
         //v27ter_rx(v27ter, amp, len);
         chunk_count++;
+        epoch = chunk_count*MILLISECONDS_PER_CHUNK;
     }
     t4_rx_release(&t4_rx_state);
 
     if (sf_close(inhandle))
     {
-        fprintf(stderr, "    Cannot close audio file '%s'\n", filename);
+		start_log_line("DEBUG");
+        write_log("    Cannot close audio file '%s'\n", filename);
         exit(2);
     }
     return  0;
