@@ -265,13 +265,16 @@ int t30_decode_dis_dtc_dcs_to_buff(char *dest, const uint8_t *pkt, int len)
 
     frame_type = pkt[2] & 0xFE;
 
+	/*
     if (len <= 2)
     {
         p += sprintf(p, "  Frame is short%%0a");
         return p-dest;
     }
+	*/
     
-    p += sprintf(p, "%s:%%0a", t30_frametype(pkt[2]));
+    //p += sprintf(p, "%s:%%0a", t30_frametype(pkt[2]));
+
     if (len <= 3)
     {
         p += sprintf(p, "  Frame is short%%0a");
@@ -643,17 +646,19 @@ int current_fallback = 0;
 const char *event_data_prefix;
 int chunk_count = 0;
 
-static void decode_20digit_msg(const uint8_t *pkt, int len)
+static int decode_20digit_msg_to_buff(char *dest, const uint8_t *pkt, int len)
 {
     int p;
     int k;
     char msg[T30_MAX_IDENT_LEN + 1];
 
+    char *ptr = dest;
+
     if (len > T30_MAX_IDENT_LEN + 3)
     {
-        fprintf(stderr, "XXX %d %d\n", len, T30_MAX_IDENT_LEN + 1);
+        ptr += sprintf(ptr, "XXX %d %d\n", len, T30_MAX_IDENT_LEN + 1);
         msg[0] = '\0';
-        return;
+        return ptr-dest;
     }
     pkt += 2;
     p = len - 2;
@@ -665,11 +670,12 @@ static void decode_20digit_msg(const uint8_t *pkt, int len)
     while (p > 1)
         msg[k++] = pkt[--p];
     msg[k] = '\0';
-    fprintf(stderr, "%s is: \"%s\"\n", t30_frametype(pkt[0]), msg);
+    ptr += sprintf(dest, "%s", msg);
+    return ptr-dest;
 }
 /*- End of function --------------------------------------------------------*/
 
-static void print_frame(const char *io, const uint8_t *fr, int frlen)
+static void print_frame(const uint8_t *fr, int frlen)
 {
     int i;
     int type;
@@ -679,25 +685,30 @@ static void print_frame(const char *io, const uint8_t *fr, int frlen)
 
     char buff[4096];
     
-    fprintf(stderr, "EVENT: %010u;%s;%s;%s ", chunk_count*20, event_data_prefix, io, t30_frametype(fr[2]));
-    for (i = 2;  i < frlen;  i++)
-        fprintf(stderr, " %02x", fr[i]);
+    fprintf(stderr, "EVENT: %09u;%s;%s;", chunk_count*20, event_data_prefix, t30_frametype(fr[2]));
+    for (i = 2;  i < frlen;  i++) {
+        fprintf(stderr, "%02x", fr[i]);
+        if(i < frlen-1) {
+            fprintf(stderr, " ");
+        }
+    }
     type = fr[2] & 0xFE;
-    if (type == T30_DIS  ||  type == T30_DTC  ||  type == T30_DCS)
+    if (type == T30_DIS  ||  type == T30_DTC  ||  type == T30_DCS) {
         t30_decode_dis_dtc_dcs_to_buff(buff, fr, frlen);
-        fprintf(stderr, " %s", buff);
-    if (type == T30_CSI  ||  type == T30_TSI  ||  type == T30_PWD  ||  type == T30_SEP  ||  type == T30_SUB  ||  type == T30_SID)
-        decode_20digit_msg(fr, frlen);
-    if (type == T30_NSF  ||  type == T30_NSS  ||  type == T30_NSC)
-    {
+        fprintf(stderr, ";%s", buff);
+    } else if (type == T30_CSI  ||  type == T30_TSI  ||  type == T30_PWD  ||  type == T30_SEP  ||  type == T30_SUB  ||  type == T30_SID) {
+        decode_20digit_msg_to_buff(buff, fr, frlen);
+        fprintf(stderr, ";%s", buff);
+    } else if (type == T30_NSF  ||  type == T30_NSS  ||  type == T30_NSC) {
+        fprintf(stderr, ";");
         if (t35_decode(&fr[3], frlen - 3, &country, &vendor, &model))
         {
             if (country)
-                fprintf(stderr, "The remote was made in '%s'\n", country);
+                fprintf(stderr, "country=%s ", country);
             if (vendor)
-                fprintf(stderr, "The remote was made by '%s'\n", vendor);
+                fprintf(stderr, "vendor=%s ", vendor);
             if (model)
-                fprintf(stderr, "The remote is a '%s'\n", model);
+                fprintf(stderr, "model=%s ", model);
         }
     }
     fprintf(stderr, "\n");
@@ -794,10 +805,10 @@ static void hdlc_accept(void *user_data, const uint8_t *msg, int len, int ok)
     {
         if (msg[0] != 0xFF  ||  !(msg[1] == 0x03  ||  msg[1] == 0x13))
         {
-            fprintf(stderr, "EVENT: %010u %s Bad HDLC frame header - %02x %02x\n", chunk_count*20, event_data_prefix, msg[0], msg[1]);
+            fprintf(stderr, "EVENT: %09u;%s Bad HDLC frame header - %02x %02x\n", chunk_count*20, event_data_prefix, msg[0], msg[1]);
             return;
         }
-        print_frame("HDLC: ", msg, len);
+        print_frame(msg, len);
         type = msg[2] & 0xFE;
         switch (type)
         {
