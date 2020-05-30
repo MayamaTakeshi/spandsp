@@ -45,13 +45,13 @@ int epoch = 0;
 #define MILLISECONDS_PER_CHUNK 20
 
 static void start_log_line(char *type) {
-    fprintf(stderr, "%09u;%s;%s;", epoch, type, identifier);
+    printf("%09u;%s;%s;", epoch, type, identifier);
 }
 
 static void write_log(const char* format, ...) {
 	va_list args;
 	va_start(args, format);
-	vfprintf(stderr, format, args);
+	vprintf(format, args);
 	va_end(args);
 }
 
