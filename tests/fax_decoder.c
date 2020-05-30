@@ -44,8 +44,8 @@ int epoch = 0;
 
 #define MILLISECONDS_PER_CHUNK 20
 
-static void start_log_line(char *section) {
-    fprintf(stderr, "%s: %09u;%s;", section, epoch, identifier);
+static void start_log_line(char *type) {
+    fprintf(stderr, "%09u;%s;%s;", epoch, type, identifier);
 }
 
 static void write_log(const char* format, ...) {
