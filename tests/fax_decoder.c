@@ -708,15 +708,15 @@ static void print_frame(const uint8_t *fr, int frlen)
             write_log(" ");
         }
     }
+	write_log(";");
     type = fr[2] & 0xFE;
     if (type == T30_DIS  ||  type == T30_DTC  ||  type == T30_DCS) {
         t30_decode_dis_dtc_dcs_to_buff(buff, fr, frlen);
-        write_log(";%s", buff);
+        write_log("%s", buff);
     } else if (type == T30_CSI  ||  type == T30_TSI  ||  type == T30_PWD  ||  type == T30_SEP  ||  type == T30_SUB  ||  type == T30_SID) {
         decode_20digit_msg_to_buff(buff, fr, frlen);
-        write_log(";%s", buff);
+        write_log("%s", buff);
     } else if (type == T30_NSF  ||  type == T30_NSS  ||  type == T30_NSC) {
-        write_log(";");
         if (t35_decode(&fr[3], frlen - 3, &country, &vendor, &model))
         {
             if (country)
