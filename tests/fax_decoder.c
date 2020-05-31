@@ -697,7 +697,7 @@ static void print_frame(const uint8_t *fr, int frlen)
     const char *vendor;
     const char *model;
 
-    char buff[4096];
+    char buff[20480];
     
     start_log_line("MESSAGE");
     write_log("%s;", t30_frametype(fr[2]));
