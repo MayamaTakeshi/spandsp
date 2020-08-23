@@ -39,8 +39,11 @@
 #define DISBIT8     0x80
 
 const char *identifier;
+int current_tone = 0;
 int chunk_count = 0;
 int epoch = 0;
+
+modem_connect_tones_rx_state_t cng_rx;
 
 #define MILLISECONDS_PER_CHUNK 20
 
@@ -1048,6 +1051,43 @@ Usage: file_name identifier\n \
 Ex:    side1.wav side1\n");
 }
 
+void tone_callback(void *user_data, int code, int dummy1, int dummy2) {
+    char *tone;
+
+	if(code != 0) {
+		current_tone = code;
+		return;
+	}
+
+	// if code is 0 then the current_tone stopped.
+	switch(current_tone) {
+	case MODEM_CONNECT_TONES_FAX_CNG:
+		tone = "CNG";
+		break;
+	case MODEM_CONNECT_TONES_ANS:
+		tone = "ANS";
+		break;
+	case MODEM_CONNECT_TONES_ANS_PR:
+		tone = "ANS_PR";
+		break;
+	case MODEM_CONNECT_TONES_ANSAM:
+		tone = "ANSAM";
+		break;
+	case MODEM_CONNECT_TONES_ANSAM_PR:
+		tone = "ANSAM_PR";
+		break;
+	case MODEM_CONNECT_TONES_FAX_PREAMBLE:
+		tone = "FAX_PREAMBLE";
+		break;
+	case MODEM_CONNECT_TONES_FAX_CED_OR_PREAMBLE:
+		tone = "CED_OR_PREAMBLE";
+		break;
+	default:
+		tone = "UNKNOWN";
+	}
+	printf("%09u;TONE;%s;%s;\n", epoch, identifier, tone);
+}
+
 int main(int argc, char *argv[])
 {
     fsk_rx_state_t *fsk;
@@ -1088,6 +1128,33 @@ int main(int argc, char *argv[])
         write_log("    Unexpected number of channels in audio file '%s'\n", filename);
         exit(2);
     }
+
+	modem_connect_tones_rx_init(&cng_rx, MODEM_CONNECT_TONES_FAX_CNG, tone_callback, 0);
+    for (;;)
+    {
+        len = sf_readf_short(inhandle, amp, SAMPLES_PER_CHUNK);
+        if (len < SAMPLES_PER_CHUNK)
+            break;
+		modem_connect_tones_rx(&cng_rx, amp, len);
+        chunk_count++;
+        epoch = chunk_count*MILLISECONDS_PER_CHUNK;
+    }
+	sf_seek(inhandle, 0, SEEK_SET);
+
+	chunk_count = 0;
+	modem_connect_tones_rx_init(&cng_rx, MODEM_CONNECT_TONES_ANS, tone_callback, 0);
+    for (;;)
+    {
+        len = sf_readf_short(inhandle, amp, SAMPLES_PER_CHUNK);
+        if (len < SAMPLES_PER_CHUNK)
+            break;
+		modem_connect_tones_rx(&cng_rx, amp, len);
+        chunk_count++;
+        epoch = chunk_count*MILLISECONDS_PER_CHUNK;
+    }
+	sf_seek(inhandle, 0, SEEK_SET);
+
+	chunk_count = 0;
 
     memset(&t30_dummy, 0, sizeof(t30_dummy));
     span_log_init(&t30_dummy.logging, SPAN_LOG_FLOW, NULL);
