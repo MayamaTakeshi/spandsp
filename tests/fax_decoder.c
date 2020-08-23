@@ -901,11 +901,11 @@ static void t4_end(void)
     t4_rx_end_page(&t4_rx_state);
     t4_rx_get_transfer_statistics(&t4_rx_state, &stats);
     start_log_line("STATS");
-    write_log("Pages = %d,", stats.pages_transferred);
+    write_log("STATS;Pages = %d,", stats.pages_transferred);
     write_log("Image size = %dx%d,", stats.width, stats.length);
     write_log("Image resolution = %dx%d,", stats.x_resolution, stats.y_resolution);
     write_log("Bad rows = %d,", stats.bad_rows);
-    write_log("Longest bad row run = %d\n", stats.longest_bad_row_run);
+    write_log("Longest bad row run = %d;\n", stats.longest_bad_row_run);
     t4_up = FALSE;
 }
 /*- End of function --------------------------------------------------------*/
@@ -1085,7 +1085,7 @@ void tone_callback(void *user_data, int code, int dummy1, int dummy2) {
 	default:
 		tone = "UNKNOWN";
 	}
-	printf("%09u;TONE;%s;%s;\n", epoch, identifier, tone);
+	printf("%09u;TONE;%s;%s;;\n", epoch, identifier, tone);
 }
 
 int main(int argc, char *argv[])
